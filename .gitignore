@@ -2,6 +2,5 @@ __pycache__/
 *.pyc
 .ipynb_checkpoints/
 models/checkpoints/
-data/raw/*.csv
 data/processed/
 submissions/*.csv
