@@ -271,6 +271,7 @@ def main():
     parser.add_argument('--use_dense_rag', action='store_true', help='Enable dense sentence embedding RAG retrieval')
     parser.add_argument('--use_peft', action='store_true', help='Use LoRA PEFT fine-tuning')
     parser.add_argument('--dry_run', action='store_true', help='Fast dry run on small subset for verification')
+    parser.add_argument('--skip_submission', action='store_true', help='Skip test set inference and submission CSV generation')
     args = parser.parse_args()
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -354,25 +355,28 @@ def main():
     trainer.train()
     print("[INFO] Fine-tuning complete.", flush=True)
 
-    print("[INFO] Running inference on Validation Set...", flush=True)
+    print("[INFO] Running evaluation on Validation Set...", flush=True)
     val_preds = generate_nllb_answers(model, tokenizer, val_df, retriever=retriever, device=device)
     val_metrics = compute_rouge_metrics(val_preds, val_df['output'].tolist())
-    print(f"[METRIC] Overall Validation ROUGE-1 F1: {val_metrics['rouge1_f1']:.4f}", flush=True)
-    print(f"[METRIC] Overall Validation ROUGE-L F1: {val_metrics['rougeL_f1']:.4f}", flush=True)
+    print(f"[METRIC] Final Validation ROUGE-1 F1: {val_metrics['rouge1_f1']:.4f}", flush=True)
+    print(f"[METRIC] Final Validation ROUGE-L F1: {val_metrics['rougeL_f1']:.4f}", flush=True)
 
-    print(f"[INFO] Generating predictions for Test Set ({len(test_df)} questions)...", flush=True)
-    test_preds = generate_nllb_answers(model, tokenizer, test_df, retriever=retriever, device=device)
+    if not args.skip_submission:
+        print(f"[INFO] Generating predictions for Test Set ({len(test_df)} questions)...", flush=True)
+        test_preds = generate_nllb_answers(model, tokenizer, test_df, retriever=retriever, device=device)
 
-    submission_df = pd.DataFrame({
-        'ID': test_df['ID'],
-        'TargetRLF1': test_preds,
-        'TargetR1F1': test_preds,
-        'TargetLLM': test_preds,
-    })
+        submission_df = pd.DataFrame({
+            'ID': test_df['ID'],
+            'TargetRLF1': test_preds,
+            'TargetR1F1': test_preds,
+            'TargetLLM': test_preds,
+        })
 
-    submission_df.to_csv(args.submission_path, index=False)
-    print(f"[SUCCESS] Submission saved successfully to: {args.submission_path}", flush=True)
-    print(submission_df.head(), flush=True)
+        submission_df.to_csv(args.submission_path, index=False)
+        print(f"[SUCCESS] Submission saved successfully to: {args.submission_path}", flush=True)
+        print(submission_df.head(), flush=True)
+    else:
+        print("[INFO] --skip_submission set. Skipped test set submission file generation.", flush=True)
 
 
 if __name__ == '__main__':
