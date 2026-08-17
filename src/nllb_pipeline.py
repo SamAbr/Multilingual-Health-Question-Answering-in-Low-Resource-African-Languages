@@ -18,7 +18,6 @@ import numpy as np
 import pandas as pd
 import torch
 from pathlib import Path
-from rouge_score import rouge_scorer
 from transformers import (
     AutoTokenizer,
     AutoModelForSeq2SeqLM,
@@ -33,6 +32,7 @@ from datasets import Dataset
 sys.path.append(str(Path(__file__).resolve().parent))
 from retrieval import HybridRetriever, SubsetRAGRetriever
 from threshold_optimizer import optimize_per_subset_thresholds
+from rouge_utils import make_rouge_scorer
 
 # Ensure UTF-8 output encoding for Windows compatibility
 if hasattr(sys.stdout, 'reconfigure'):
@@ -86,7 +86,7 @@ def clean_text_for_target_llm(text: str) -> str:
 
 
 def compute_rouge_metrics(predictions, references):
-    scorer = rouge_scorer.RougeScorer(['rouge1', 'rougeL'], use_stemmer=True)
+    scorer = make_rouge_scorer(['rouge1', 'rougeL'])
     r1_f1, rL_f1 = [], []
     for pred, ref in zip(predictions, references):
         scores = scorer.score(str(ref), clean_text_for_target_llm(pred))
