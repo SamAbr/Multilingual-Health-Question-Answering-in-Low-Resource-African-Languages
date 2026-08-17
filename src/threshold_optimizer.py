@@ -11,18 +11,18 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import KFold
 
-from rouge_utils import make_rouge_scorer
+from rouge_score import rouge_scorer
 
 
 def compute_rouge_l_single(pred: str, ref: str, scorer=None) -> float:
     if scorer is None:
-        scorer = make_rouge_scorer(['rougeL'])
+        scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
     return float(scorer.score(str(ref), str(pred))['rougeL'].fmeasure)
 
 
 def pick_best_threshold_for_subset(retr_preds, retr_sims, gen_preds, references, grid_step=0.01):
     """Grid search for optimal similarity threshold on a single subset."""
-    scorer = make_rouge_scorer(['rougeL'])
+    scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
     
     retr_scores = [compute_rouge_l_single(p, r, scorer) for p, r in zip(retr_preds, references)]
     gen_scores = [compute_rouge_l_single(p, r, scorer) for p, r in zip(gen_preds, references)]
@@ -81,7 +81,7 @@ class RetrievalCalibrator:
         self.models = {}
 
     def fit(self, val_df, retr_preds, retr_sims, gen_preds, subset_col='subset', ref_col='output'):
-        scorer = make_rouge_scorer(['rougeL'])
+        scorer = rouge_scorer.RougeScorer(['rougeL'], use_stemmer=True)
         subsets = val_df[subset_col].tolist()
         references = val_df[ref_col].tolist()
 
