@@ -187,19 +187,19 @@ class PerSubsetRougeCallback(TrainerCallback):
             return
 
         print(f"\n[EVAL] Epoch {state.epoch:.1f} — Stratified Validation Subset ROUGE Breakdown:", flush=True)
-        # Sample up to 500 rows (stratified per subset) for fast, deadlock-free epoch evaluation
-        eval_sample_df = self.val_df.groupby('subset', group_keys=False).apply(
-            lambda g: g.sample(min(len(g), 65), random_state=42)
-        ).reset_index(drop=True)
+        # Explicit index sampling preserves all original dataframe columns safely
+        sample_indices = []
+        for _, group_data in self.val_df.groupby('subset'):
+            sub_sample = group_data.sample(min(len(group_data), 65), random_state=42)
+            sample_indices.extend(sub_sample.index.tolist())
         
+        eval_sample_df = self.val_df.loc[sample_indices].copy().reset_index(drop=True)
         val_preds = generate_nllb_answers(model, self.tokenizer, eval_sample_df, retriever=self.retriever, device=self.device)
+        eval_sample_df['pred'] = val_preds
         
         subset_metrics = []
         for subset, group_data in eval_sample_df.groupby('subset'):
-            sub_indices = group_data.index
-            sub_preds = [val_preds[i] for i in sub_indices]
-            sub_refs = group_data['output'].tolist()
-            m = compute_rouge_metrics(sub_preds, sub_refs)
+            m = compute_rouge_metrics(group_data['pred'].tolist(), group_data['output'].tolist())
             subset_metrics.append({
                 'Subset': subset,
                 'Language': SUBSET_TO_NAME.get(subset, subset),
@@ -210,7 +210,7 @@ class PerSubsetRougeCallback(TrainerCallback):
 
         sub_df = pd.DataFrame(subset_metrics)
         print(sub_df.to_string(index=False), flush=True)
-        overall = compute_rouge_metrics(val_preds, eval_sample_df['output'].tolist())
+        overall = compute_rouge_metrics(eval_sample_df['pred'].tolist(), eval_sample_df['output'].tolist())
         print(f"Overall Sample Validation ROUGE-1: {overall['rouge1_f1']:.4f} | ROUGE-L: {overall['rougeL_f1']:.4f}\n", flush=True)
 
 
