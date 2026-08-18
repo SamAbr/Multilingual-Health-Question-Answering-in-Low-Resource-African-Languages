@@ -143,7 +143,7 @@ def prepare_nllb_dataset(df, tokenizer, retriever=None, max_input_len=256, max_t
             attention_mask_list.append(encoded_in['attention_mask'])
 
             if 'answer' in examples:
-                tokenizer.src_lang = src_code
+                tokenizer.tgt_lang = src_code
                 encoded_out = tokenizer(
                     text_target=examples['answer'][i],
                     max_length=max_target_len,
@@ -205,15 +205,23 @@ class PerSubsetRougeCallback(TrainerCallback):
 
 
 # ── NLLB Per-Language Batch Generation ───────────────────────────────────────
-def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=256, max_target_len=256, batch_size=8, device='cuda'):
+def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=256, max_target_len=256, min_similarity=0.2, batch_size=8, device='cuda'):
     model.eval()
     all_preds = [None] * len(df)
 
-    # Group by language subset so each mini-batch shares the exact forced_bos_token_id
+    # Group by language subset so each mini-batch shares forced_bos_token_id and length constraints
     for subset, group_df in df.groupby('subset'):
         group_indices = group_df.index.tolist()
         flores_code = SUBSET_TO_FLORES.get(subset, 'eng_Latn')
         
+        # Subset-specific adaptive length bounds (Amharic short ~20 words vs Akan long ~106 words)
+        if subset == 'Amh_Eth':
+            sub_min_len, sub_max_new = 10, 128
+        elif subset == 'Aka_Gha':
+            sub_min_len, sub_max_new = 35, 320
+        else:
+            sub_min_len, sub_max_new = 15, max_target_len
+
         # Get target language BOS token ID for NLLB
         if hasattr(tokenizer, 'lang_code_to_id') and flores_code in tokenizer.lang_code_to_id:
             forced_bos_id = tokenizer.lang_code_to_id[flores_code]
@@ -227,7 +235,7 @@ def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=25
             prompts = []
             for _, row in batch_rows.iterrows():
                 q_text = str(row['input'])
-                ctx = retriever.get_context(q_text, subset) if retriever else ""
+                ctx = retriever.get_context(q_text, subset, min_score=min_similarity) if retriever else ""
                 prompts.append(build_prompt(q_text, subset, ctx))
 
             tokenizer.src_lang = flores_code
@@ -237,8 +245,8 @@ def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=25
                 generated_tokens = model.generate(
                     **inputs,
                     forced_bos_token_id=forced_bos_id,
-                    max_new_tokens=max_target_len,
-                    min_length=15,
+                    max_new_tokens=sub_max_new,
+                    min_length=sub_min_len,
                     num_beams=4,
                     length_penalty=1.0,
                     no_repeat_ngram_size=3,
@@ -258,7 +266,7 @@ def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=25
 def main():
     parser = argparse.ArgumentParser(description="NLLB Multilingual Health QA Pipeline")
     parser.add_argument('--model_name', type=str, default='facebook/nllb-200-distilled-600M',
-                        help='NLLB model name: facebook/nllb-200-distilled-600M, facebook/nllb-200-1.3B')
+                        help='NLLB model name: facebook/nllb-200-distilled-600M, facebook/nllb-200-1.3B, facebook/nllb-200-3.3B')
     parser.add_argument('--train_path', type=str, default='data/raw/Training set.csv')
     parser.add_argument('--val_path', type=str, default='data/raw/Validation set.csv')
     parser.add_argument('--test_path', type=str, default='data/raw/Test set.csv')
@@ -267,6 +275,7 @@ def main():
     parser.add_argument('--epochs', type=int, default=3)
     parser.add_argument('--batch_size', type=int, default=8)
     parser.add_argument('--learning_rate', type=float, default=5e-5)
+    parser.add_argument('--min_similarity', type=float, default=0.2, help='RAG context cosine similarity floor')
     parser.add_argument('--use_rag', action='store_true', help='Enable RAG context retrieval')
     parser.add_argument('--use_dense_rag', action='store_true', help='Enable dense sentence embedding RAG retrieval')
     parser.add_argument('--use_peft', action='store_true', help='Use LoRA PEFT fine-tuning')
