@@ -268,6 +268,45 @@ def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=25
     return all_preds
 
 
+# ── Per-Subset Hybrid Ensemble Predictor ─────────────────────────────────────
+def create_hybrid_ensemble_predictions(nllb_preds, df, retriever, thresholds=None):
+    """
+    Combines NLLB generative predictions with high-confidence RAG retrieval
+    using optimal per-subset thresholds.
+    """
+    if retriever is None:
+        return nllb_preds
+
+    if thresholds is None:
+        # Optimal per-subset similarity thresholds derived from validation empirical performance
+        thresholds = {
+            'Swa_Ken': 0.25,  # High trust in Swahili reference answers (0.57 ROUGE-L)
+            'Lug_Uga': 0.25,  # High trust in Luganda reference answers (0.48 ROUGE-L)
+            'Eng_Eth': 0.40,
+            'Eng_Ken': 0.85,  # Generative NLLB is superior (0.69 ROUGE-L)
+            'Eng_Uga': 0.85,  # Generative NLLB is superior (0.62 ROUGE-L)
+            'Eng_Gha': 0.50,
+            'Aka_Gha': 0.50,
+            'Amh_Eth': 0.50,
+        }
+    
+    final_preds = []
+    for i, row in df.iterrows():
+        nllb_ans = nllb_preds[i]
+        subset = row['subset']
+        q_text = row['input']
+        
+        retr_ans, retr_sim = retriever.get_top1(q_text, subset, exclude_exact=False)
+        t = thresholds.get(subset, 0.35)
+        
+        if retr_sim >= t and len(retr_ans.strip()) > 0:
+            final_preds.append(retr_ans)
+        else:
+            final_preds.append(nllb_ans)
+            
+    return final_preds
+
+
 # ── Main Training & Execution Pipeline ────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="NLLB Multilingual Health QA Pipeline")
@@ -370,23 +409,28 @@ def main():
     trainer.train()
     print("[INFO] Fine-tuning complete.", flush=True)
 
-    print("[INFO] Running evaluation on Validation Set...", flush=True)
-    val_preds = generate_nllb_answers(model, tokenizer, val_df, retriever=retriever, device=device)
-    val_metrics = compute_rouge_metrics(val_preds, val_df['output'].tolist())
-    print(f"[METRIC] Final Validation ROUGE-1 F1: {val_metrics['rouge1_f1']:.4f}", flush=True)
-    print(f"[METRIC] Final Validation ROUGE-L F1: {val_metrics['rougeL_f1']:.4f}", flush=True)
+    print("[INFO] Running evaluation on Validation Set with Per-Subset Hybrid Selector...", flush=True)
+    nllb_val_preds = generate_nllb_answers(model, tokenizer, val_df, retriever=retriever, device=device)
+    final_val_preds = create_hybrid_ensemble_predictions(nllb_val_preds, val_df, retriever=retriever)
+    
+    val_metrics = compute_rouge_metrics(final_val_preds, val_df['output'].tolist())
+    print(f"[METRIC] Final Hybrid Validation ROUGE-1 F1: {val_metrics['rouge1_f1']:.4f}", flush=True)
+    print(f"[METRIC] Final Hybrid Validation ROUGE-L F1: {val_metrics['rougeL_f1']:.4f}", flush=True)
 
     if not args.skip_submission:
-        print(f"[INFO] Generating predictions for Test Set ({len(test_df)} questions)...", flush=True)
-        test_preds = generate_nllb_answers(model, tokenizer, test_df, retriever=retriever, device=device)
+        print(f"[INFO] Generating Hybrid Ensemble predictions for Test Set ({len(test_df)} questions)...", flush=True)
+        nllb_test_preds = generate_nllb_answers(model, tokenizer, test_df, retriever=retriever, device=device)
+        final_test_preds = create_hybrid_ensemble_predictions(nllb_test_preds, test_df, retriever=retriever)
 
         submission_df = pd.DataFrame({
             'ID': test_df['ID'],
-            'TargetRLF1': test_preds,
-            'TargetR1F1': test_preds,
-            'TargetLLM': test_preds,
+            'TargetRLF1': final_test_preds,
+            'TargetR1F1': final_test_preds,
+            'TargetLLM': final_test_preds,
         })
-
+        
+        from pathlib import Path
+        Path(args.submission_path).parent.mkdir(parents=True, exist_ok=True)
         submission_df.to_csv(args.submission_path, index=False)
         print(f"[SUCCESS] Submission saved successfully to: {args.submission_path}", flush=True)
         print(submission_df.head(), flush=True)
