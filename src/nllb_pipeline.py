@@ -234,6 +234,8 @@ def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=25
             forced_bos_id = tokenizer.convert_tokens_to_ids(flores_code)
 
         for start_idx in range(0, len(group_df), batch_size):
+            if start_idx % 160 == 0:
+                print(f"[INFO] Generating answers for subset '{subset}': {start_idx}/{len(group_df)} samples...", flush=True)
             batch_indices = group_indices[start_idx:start_idx + batch_size]
             batch_rows = group_df.iloc[start_idx:start_idx + batch_size]
             
