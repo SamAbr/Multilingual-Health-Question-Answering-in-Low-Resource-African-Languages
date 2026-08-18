@@ -246,6 +246,7 @@ def generate_nllb_answers(model, tokenizer, df, retriever=None, max_input_len=25
                     **inputs,
                     forced_bos_token_id=forced_bos_id,
                     max_new_tokens=sub_max_new,
+                    max_length=None,
                     min_length=sub_min_len,
                     num_beams=4,
                     length_penalty=1.0,
