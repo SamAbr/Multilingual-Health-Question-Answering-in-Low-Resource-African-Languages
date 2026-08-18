@@ -421,8 +421,23 @@ def main():
     final_val_preds = create_hybrid_ensemble_predictions(nllb_val_preds, val_df, retriever=retriever)
     
     val_metrics = compute_rouge_metrics(final_val_preds, val_df['output'].tolist())
-    print(f"[METRIC] Final Hybrid Validation ROUGE-1 F1: {val_metrics['rouge1_f1']:.4f}", flush=True)
+    print(f"\n[METRIC] Final Hybrid Validation ROUGE-1 F1: {val_metrics['rouge1_f1']:.4f}", flush=True)
     print(f"[METRIC] Final Hybrid Validation ROUGE-L F1: {val_metrics['rougeL_f1']:.4f}", flush=True)
+
+    print("\n[EVAL] Final Full Validation Set — Per-Subset Hybrid ROUGE Breakdown:", flush=True)
+    val_df_copy = val_df.copy()
+    val_df_copy['pred'] = final_val_preds
+    sub_metrics = []
+    for subset, group_data in val_df_copy.groupby('subset'):
+        m = compute_rouge_metrics(group_data['pred'].tolist(), group_data['output'].tolist())
+        sub_metrics.append({
+            'Subset': subset,
+            'Language': SUBSET_TO_NAME.get(subset, subset),
+            'ROUGE-1 F1': round(m['rouge1_f1'], 4),
+            'ROUGE-L F1': round(m['rougeL_f1'], 4),
+            'Count': len(group_data),
+        })
+    print(pd.DataFrame(sub_metrics).to_string(index=False), flush=True)
 
     if not args.skip_submission:
         print(f"[INFO] Generating Hybrid Ensemble predictions for Test Set ({len(test_df)} questions)...", flush=True)
