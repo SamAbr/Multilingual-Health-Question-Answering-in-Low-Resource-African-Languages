@@ -186,11 +186,16 @@ class PerSubsetRougeCallback(TrainerCallback):
         if model is None:
             return
 
-        print(f"\n[EVAL] Epoch {state.epoch:.1f} — Per-Language Subset ROUGE Breakdown:")
-        val_preds = generate_nllb_answers(model, self.tokenizer, self.val_df, retriever=self.retriever, device=self.device)
+        print(f"\n[EVAL] Epoch {state.epoch:.1f} — Stratified Validation Subset ROUGE Breakdown:", flush=True)
+        # Sample up to 500 rows (stratified per subset) for fast, deadlock-free epoch evaluation
+        eval_sample_df = self.val_df.groupby('subset', group_keys=False).apply(
+            lambda g: g.sample(min(len(g), 65), random_state=42)
+        ).reset_index(drop=True)
+        
+        val_preds = generate_nllb_answers(model, self.tokenizer, eval_sample_df, retriever=self.retriever, device=self.device)
         
         subset_metrics = []
-        for subset, group_data in self.val_df.groupby('subset'):
+        for subset, group_data in eval_sample_df.groupby('subset'):
             sub_indices = group_data.index
             sub_preds = [val_preds[i] for i in sub_indices]
             sub_refs = group_data['output'].tolist()
@@ -204,9 +209,9 @@ class PerSubsetRougeCallback(TrainerCallback):
             })
 
         sub_df = pd.DataFrame(subset_metrics)
-        print(sub_df.to_string(index=False))
-        overall = compute_rouge_metrics(val_preds, self.val_df['output'].tolist())
-        print(f"Overall Validation ROUGE-1: {overall['rouge1_f1']:.4f} | ROUGE-L: {overall['rougeL_f1']:.4f}\n", flush=True)
+        print(sub_df.to_string(index=False), flush=True)
+        overall = compute_rouge_metrics(val_preds, eval_sample_df['output'].tolist())
+        print(f"Overall Sample Validation ROUGE-1: {overall['rouge1_f1']:.4f} | ROUGE-L: {overall['rougeL_f1']:.4f}\n", flush=True)
 
 
 # ── NLLB Per-Language Batch Generation ───────────────────────────────────────
