@@ -14,6 +14,9 @@ import os
 import sys
 import re
 import argparse
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 import pandas as pd
 import torch
@@ -26,6 +29,8 @@ from transformers import (
     Seq2SeqTrainingArguments,
     TrainerCallback,
 )
+import transformers
+transformers.logging.set_verbosity_error()
 from datasets import Dataset
 
 # Add src to python path for modular imports
