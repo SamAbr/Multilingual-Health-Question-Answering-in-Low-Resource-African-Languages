@@ -10,6 +10,8 @@ this project cares about most. WhitespaceTokenizer avoids both problems and is
 safe across all 8 subsets' scripts.
 """
 
+import re
+import numpy as np
 from rouge_score import rouge_scorer
 
 
@@ -29,3 +31,27 @@ def make_rouge_scorer(rouge_types=('rouge1', 'rougeL')):
     would mis-stem non-English tokens if applied.
     """
     return rouge_scorer.RougeScorer(list(rouge_types), tokenizer=WhitespaceTokenizer())
+
+
+def clean_text_for_target_llm(text: str) -> str:
+    """Post-processes output string for TargetLLM judge evaluation."""
+    if not isinstance(text, str):
+        text = str(text) if text is not None else ""
+    text = re.sub(r'<extra_id_\d+>', '', text)
+    text = re.sub(r'<[^>]+>', '', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+
+def compute_rouge_metrics(predictions, references):
+    scorer = make_rouge_scorer(['rouge1', 'rougeL'])
+    r1_f1, rL_f1 = [], []
+    for pred, ref in zip(predictions, references):
+        scores = scorer.score(str(ref), clean_text_for_target_llm(pred))
+        r1_f1.append(scores['rouge1'].fmeasure)
+        rL_f1.append(scores['rougeL'].fmeasure)
+    return {
+        'rouge1_f1': float(np.mean(r1_f1)),
+        'rougeL_f1': float(np.mean(rL_f1)),
+    }
+

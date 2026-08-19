@@ -37,7 +37,7 @@ from datasets import Dataset
 sys.path.append(str(Path(__file__).resolve().parent))
 from retrieval import HybridRetriever, SubsetRAGRetriever
 from threshold_optimizer import optimize_per_subset_thresholds
-from rouge_utils import make_rouge_scorer
+from rouge_utils import make_rouge_scorer, clean_text_for_target_llm, compute_rouge_metrics
 
 # Ensure UTF-8 output encoding for Windows compatibility
 if hasattr(sys.stdout, 'reconfigure'):
